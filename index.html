@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ORAM Explorer</title>
+<meta name="description" content="Drive OptORAMa and MegaBlocks yourself: see what the client holds, what the server stores, and what the server sees, step by step.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1><span>ORAM</span> Explorer</h1>
+  <div class="tabs">
+    <button data-tab="optorama" class="on">OptORAMa</button>
+    <button data-tab="megablocks">MegaBlocks</button>
+    <button data-tab="about">About / simplifications</button>
+  </div>
+  <div class="params" id="params">
+    <div class="pgroup"><label>N (addresses)</label><select id="pN"></select></div>
+    <div class="pgroup mb-only"><label>B (words / block)</label><select id="pB"><option>4</option><option>8</option></select></div>
+    <div class="pgroup mb-only"><label>growth g</label><select id="pG"><option>3</option><option selected>4</option></select></div>
+    <div class="pgroup"><label>seed</label><input id="pSeed" type="number" value="1"></div>
+    <button id="reset">Reset</button>
+  </div>
+</header>
+
+<div id="simView">
+  <div id="banner">
+    <span id="stageChip" class="lookup">IDLE</span>
+    <div id="phase">Choose an operation and press Access</div>
+    <div id="frameInfo"></div>
+  </div>
+  <div class="legend" id="legend">
+    <span><i class="sw" style="background:#2d7f95"></i>real item (addr / value)</span>
+    <span><i class="sw" style="background:#3a4152"></i>dummy (filler) item</span>
+    <span><i class="sw" style="background:#232836"></i>empty slot</span>
+    <span><i class="sw" style="outline:2px solid #f0c75e"></i>read</span>
+    <span><i class="sw" style="outline:2px solid #83c167"></i>write</span>
+    <span><i class="sw" style="outline:2px solid #5cd0b3"></i>read + write back</span>
+    <span class="rvOnly"><i class="sw" style="outline:2px solid #fc6255"></i>actually swapped / moved</span>
+    <span class="rvOnly"><i class="sw" style="outline:2px dashed #a9b1c4"></i>dummy probe</span>
+    <span class="rvOnly"><i class="sw" style="outline:3px solid #83c167;box-shadow:0 0 8px #83c167"></i>item found here</span>
+    <span class="rvOnly"><i class="sw" style="background:#6a3c46"></i>excess item (to overflow)</span>
+  </div>
+
+  <main>
+    <aside id="left">
+      <div class="card">
+        <h2>Your access</h2>
+        <div class="row">
+          <select id="op"><option value="read">read</option><option value="write">write</option></select>
+          <label>addr</label><input id="addr" type="number" value="3" min="0">
+          <label class="valLbl">value</label><input id="val" type="number" value="42">
+        </div>
+        <div class="row">
+          <button class="primary" id="go">Access</button>
+          <button id="rand">Random access</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <label>Sequence (e.g. <code>w3=42 r3 r5</code>)</label>
+          <select id="preset">
+            <option value="">presets...</option>
+            <option value="wr">write then read back</option>
+            <option value="scan">scan all addresses</option>
+            <option value="hot">hammer one address</option>
+            <option value="rand">10 random</option>
+          </select>
+        </div>
+        <textarea id="seq">w3=42 w9=7 r3 r9 r5 w3=1 r3 r0</textarea>
+        <div class="row"><button id="runSeq">Run sequence</button><span class="small" id="seqMsg"></span></div>
+      </div>
+
+      <div class="card">
+        <h2>Playback</h2>
+        <div class="row">
+          <button id="back" title="Back (Left arrow)">&#9664; Back</button>
+          <button id="play" class="primary" title="Play / Pause (Space)">Play</button>
+          <button id="step" title="Step (Right arrow)">Step &#9654;</button>
+        </div>
+        <div class="row">
+          <button id="nextPhase" title="Jump to the next phase (N)">Next phase &#9654;&#9654;</button>
+          <button id="toEnd" title="Finish all pending animation (E)">Skip to end</button>
+        </div>
+        <div class="row"><label>speed</label><input id="speed" type="range" min="0" max="100" value="45" style="flex:1"><span class="small" id="speedLbl"></span></div>
+        <label class="toggle"><input type="checkbox" id="reveal" checked> Reveal real vs dummy (off = the server's eyes)</label>
+        <div class="small" style="margin-top:6px"><kbd>Space</kbd> play/pause <kbd>&#8592;</kbd> <kbd>&#8594;</kbd> step <kbd>N</kbd> next phase</div>
+      </div>
+
+      <div class="card" id="client">
+        <h2>Client (private memory) <span class="small">server never sees this</span></h2>
+        <div id="clientBody"></div>
+      </div>
+
+      <div class="card">
+        <h2>Logical memory <span class="small">reference, for checking</span></h2>
+        <div class="mem" id="mem"></div>
+        <div class="small" style="margin-top:6px">What a plain RAM would hold. The client does not store this; it is shown so you can verify every returned value.</div>
+      </div>
+    </aside>
+
+    <section>
+      <div class="card" id="server">
+        <h2>Server (untrusted memory) <span class="small" id="serverNote"></span></h2>
+        <div id="serverBody"></div>
+      </div>
+    </section>
+
+    <aside id="right">
+      <div class="card">
+        <h2>What just happened</h2>
+        <div id="logNow">Pick read or write, an address, and press Access. Then step through it.</div>
+        <div id="logHist"></div>
+      </div>
+      <div class="card">
+        <h2>Accesses <span class="small">value check vs plain RAM</span></h2>
+        <div id="history"></div>
+      </div>
+    </aside>
+  </main>
+
+  <div class="card" id="traceCard">
+    <h2>Server's view: physical access trace for this logical access <span id="traceStats"></span></h2>
+    <div id="trace"></div>
+  </div>
+</div>
+
+<div id="about" class="hidden">
+  <h2>What this is</h2>
+  <p>A toy-sized but real implementation of two hierarchical Oblivious RAMs, compiled into animation frames. Every logical access you issue runs through the actual data structures: values are stored, moved, found and returned by the simulation, and every read is checked against a plain RAM. The server's view at the bottom is the exact list of physical reads and writes the scheme issued.</p>
+  <p>How to use it: choose <b>read</b> or <b>write</b>, an address, press <b>Access</b>, then <b>Step</b> or <b>Play</b>. Every few accesses a <b>rebuild</b> happens (the phase banner turns blue); use <b>Next phase</b> to skim it. Turn off <b>Reveal real vs dummy</b> to see only what the server sees: encrypted cells and an address trace with no labels. Try hammering one address, then scanning all of them, and compare the traces: the shape is identical.</p>
+
+  <h3>OptORAMa (Asharov, Komargodski, Lin, Nayak, Peserico, Shi; Eurocrypt 2020 / JACM)</h3>
+  <ul>
+    <li><b>Levels.</b> Level 0 is a 4-slot buffer that is scanned in full. Level l (l &ge; 1) has capacity 4 &middot; 2<sup>l-1</sup>, up to the largest level of capacity N. Each hashed level is drawn as its bins (one Cuckoo table each), its overflow pile (own Cuckoo table) and its combined stash.</li>
+    <li><b>Lookup.</b> Scan level 0, then for every non-empty level: scan its combined stash, probe 2 Cuckoo cells of the overflow pile, then 2 Cuckoo cells of bin PRF(addr). After the item is found, every remaining probe is a dummy at random positions. The item is written back to level 0.</li>
+    <li><b>Rebuild.</b> Every 4 accesses, like a binary counter, levels 0..j-1 merge into the first empty level j (or everything merges into the largest level). Steps: extract each level (copy, tight compaction of unread real items, truncate), intersperse the shuffled arrays, PRF binning in the clear, secret loads, move excess to the overflow pile by tight compaction, per-bin Cuckoo build in the client, write tables, merge stashes.</li>
+  </ul>
+
+  <h3>MegaBlocks (Asharov, Eiluz, Komargodski, Lin; CCS 2025)</h3>
+  <ul>
+    <li><b>Asymmetric setting.</b> A server block holds B client words. Each level is a non-recurrent hash table whose bins are single blocks: dynamic packing via PRF(addr) mod C.</li>
+    <li><b>Lookup.</b> Read level 0's block, then 1 block per level (bin PRF(addr), or a random block once found), each read and written back. Cost: 2 block I/Os per level.</li>
+    <li><b>Rebuild.</b> Every B accesses. With growth factor g &gt; 2 a level absorbs g-1 merges before spilling into the next, so there are only about log N / log g levels. Steps: gather + pack live words into full blocks, oblivious compaction of blocks, choose a fresh PRF key, pad to half-full bins, butterfly routing (log C rounds, each pairs blocks i and i + 2<sup>r</sup> and splits words by bit r of their destination), install.</li>
+  </ul>
+
+  <h3>Simplifications (so nothing here misleads)</h3>
+  <ul>
+    <li><b>Tiny parameters.</b> N is 8 to 64, bins hold about 4 items, the stash has 3 slots, B is 4 or 8. Real deployments use polylog-sized bins and B in the hundreds; the failure probabilities that the papers bound as negligible are not negligible here.</li>
+    <li><b>Private retries replace negligible failure.</b> When a toy-sized random choice would fail (secret loads whose excess does not fit the overflow pile, a combined stash overflow, or a butterfly bin overflowing in MegaBlocks), the client silently re-draws that randomness before touching the server. This keeps the server trace data independent, but it peeks at the level's contents in a way the real schemes do not need, and it slightly biases the distributions.</li>
+    <li><b>PRF.</b> A keyed 32-bit integer hash, not AES. Keys are shown in the client panel as 4 hex digits.</li>
+    <li><b>Encryption is implied.</b> Every write is a fresh re-encryption in the real schemes; here cells are just shown, or shown as uniform encrypted blobs when Reveal is off.</li>
+    <li><b>Tight compaction.</b> The paper's linear-time deterministic algorithm (bipartite expander swaps, loose compaction, recursion, packed word tricks) is replaced by 3 rounds of fixed perfect matchings between the front and back halves (expander-like swaps that do real work), followed by a fixed Batcher odd-even merge network on the mark bit that guarantees completion. It is data oblivious and correct, but O(n log<sup>2</sup> n), not O(n). It is not order preserving.</li>
+    <li><b>Intersperse</b> is implemented as in the paper: sample a random bit string, run compaction on it, replay the swaps in reverse on the data. The compaction of the bit string itself is done inside the client here.</li>
+    <li><b>Level 0 shuffle and per-bin Cuckoo builds happen in client memory.</b> The client reads a whole small bin (or level 0) into private memory and writes back the full fixed-size table. The paper does this with packed word operations and O(1) client memory; the server-visible pattern (read whole bin, write whole table) is the same idea.</li>
+    <li><b>Cuckoo hashing</b> uses one table per bin with two choices and up to 12 evictions; dummy probes read 2 uniformly random cells. In the paper each level has one combined stash that is merged into a small level; here each level keeps its own combined stash which is scanned on every lookup of that level.</li>
+    <li><b>Revealed loads.</b> As in the paper, PRF binning in the clear reveals each bin's load. The test suite checks that every access, regardless of address, produces the same number of physical I/Os and the same (read/write, region) sequence; the only exception is how the staging-bin reads split among bins, which is this revealed load vector.</li>
+    <li><b>MegaBlocks packing pass.</b> Gather + pack streams blocks through a 2-block client buffer and writes exactly one block per block read (full or empty), then compacts blocks. Blocks of the merged levels are counted in physical blocks, as in the paper's I/O metric; word-level work inside the client is free.</li>
+    <li><b>No de-amortization</b> in either scheme, matching the papers' amortized bounds.</li>
+  </ul>
+  <h3>Correctness test</h3>
+  <p><code>node test.js</code> in the repository runs 200 random reads and writes per configuration (plus a full read-back), checks every returned value against a plain array, verifies the compaction network on random inputs, and runs a second instance with a completely different address sequence (one hot address) and different randomness to confirm identical per-access trace lengths and (op, region) patterns.</p>
+</div>
+
+<script src="sim-core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
